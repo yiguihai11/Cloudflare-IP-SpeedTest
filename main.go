@@ -48,9 +48,8 @@ var (
 )
 
 var URLList = []string{
-	"https://ghproxy.com/https://github.com/ip-scanner/cloudflare/archive/refs/heads/main.tar.gz",
-	"https://ghproxy.com/ymyuuu/Proxy-IP-library/archive/refs/heads/main.tar.gz",
-	"https://ghproxy.com/ymyuuu/IPDB/archive/refs/heads/main.tar.gz",
+	"https://mirror.ghproxy.com/https://github.com/ip-scanner/cloudflare/archive/refs/heads/main.tar.gz",
+	"https://mirror.ghproxy.com/https://github.com/ymyuuu/IPDB/archive/refs/heads/main.tar.gz",
 }
 
 type result struct {
