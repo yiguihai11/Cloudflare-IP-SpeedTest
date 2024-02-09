@@ -459,7 +459,6 @@ func speedtest() error {
 		if err != nil {
 			handleError(err, "解析 Shadowsocks URL 失败")
 		}
-
 		// 通过调用 generateJSON 生成JSON
 		if err := generateJSON(ssConfig, results); err != nil {
 			handleError(err, "生成JSON失败")
@@ -800,11 +799,9 @@ func parseShadowsocksURL(urlString string) (*ShadowsocksConfig, error) {
 		return nil, fmt.Errorf("Invalid scheme: %s", u.Scheme)
 	}
 
-	userinfo := u.User.Username()
-
 	plugin, pluginOpts := getPluginInfo(u)
 
-	method, password, err := decodeUserinfo(userinfo)
+	method, password, err := decodeUserinfo(u.User.Username())
 	if err != nil {
 		return nil, fmt.Errorf("Error decoding userinfo: %v", err)
 	}
@@ -824,7 +821,7 @@ func parseShadowsocksURL(urlString string) (*ShadowsocksConfig, error) {
 func decodeUserinfo(userinfo string) (string, string, error) {
 	decodedUserInfo, err := base64.RawURLEncoding.DecodeString(userinfo)
 	if err != nil {
-		return "", "", fmt.Errorf("Base64 decoding failed, fallback to percent decoding: %v", decodedUserInfo)
+		return "", "", fmt.Errorf("Base64 decoding failed, fallback to percent decoding: %v", err)
 	}
 
 	userInfoParts := strings.SplitN(string(decodedUserInfo), ":", 2)
