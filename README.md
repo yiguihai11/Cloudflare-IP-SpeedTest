@@ -5,7 +5,7 @@ Cloudflare IP 测速器是一个使用 Golang 编写的小工具，用于测试�
 首先安装 Golang 和 Git，然后在终端中运行以下命令：
 
 ```
-git clone https://github.com/badafans/Cloudflare-IP-SpeedTest.git
+git clone https://github.com/yiguihai11/Cloudflare-IP-SpeedTest.git
 cd Cloudflare-IP-SpeedTest
 go build -o ipspeedtest main.go
 ```
