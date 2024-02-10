@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -16,7 +15,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,7 +42,7 @@ var (
 	speedTest    = flag.Int("speedtest", 5, "下载测速协程数量,设为0禁用测速")                                // 下载测速协程数量
 	speedTestURL = flag.String("url", "speed.cloudflare.com/__down?bytes=500000000", "测速文件地址") // 测速文件地址
 	enableTLS    = flag.Bool("tls", true, "是否启用TLS")                                           // TLS是否启用
-	SSUrl        = flag.String("ssurl", "ss://", "ShadowSocks URLs (SIP002)使用了v2ray-plugin的链接将会输出json文件")
+	SSJson       = flag.String("ssjson", "sslocal.json", "ShadowSocks配置文件")
 )
 
 var URLList = []string{
@@ -97,8 +95,8 @@ type ShadowsocksConfig struct {
 	PluginOpts string
 }
 
-// Server 结构体表示单个服务器的配置
-type Server struct {
+// ServerConfig 结构体表示单个服务器的配置
+type ServerConfig struct {
 	Disabled   bool   `json:"disabled"`
 	Mode       string `json:"mode"`
 	Address    string `json:"address"`
@@ -111,7 +109,7 @@ type Server struct {
 
 // ServerList 结构体表示服务器列表
 type ServerList struct {
-	Servers []Server `json:"servers"`
+	Servers []ServerConfig `json:"servers"`
 }
 
 func main() {
@@ -451,18 +449,20 @@ func speedtest() error {
 			writer.Write([]string{res.result.ip, strconv.Itoa(res.result.port), strconv.FormatBool(*enableTLS), res.result.dataCenter, res.result.region, res.result.city, res.result.latency})
 		}
 	}
+
 	writer.Flush()
-	fmt.Print("\033[2J")
-	if *SSUrl != "" {
-		// 通过调用 parseShadowsocksURL 获取服务器信息
-		ssConfig, err := parseShadowsocksURL(*SSUrl)
+
+	if *SSJson != "" {
+		configFile, err := ioutil.ReadFile(*SSJson)
 		if err != nil {
-			handleError(err, "解析 Shadowsocks URL 失败")
+			handleError(err, "无法读取配置文件")
 		}
-		// 通过调用 generateJSON 生成JSON
-		if err := generateJSON(ssConfig, results); err != nil {
-			handleError(err, "生成JSON失败")
+
+		if err := UpdateConfig(configFile, results); err != nil {
+			handleError(err, "更新配置文件时发生错误件")
 		}
+
+		fmt.Println("新的配置已写入", *SSJson, "文件")
 	}
 	fmt.Printf("成功将结果写入文件 %s，耗时 %d秒\n", *outFile, time.Since(startTime)/time.Second)
 	return nil
@@ -789,114 +789,91 @@ func replaceLastOctetWithRandom(ip net.IP) net.IP {
 	return newIP
 }
 
-func parseShadowsocksURL(urlString string) (*ShadowsocksConfig, error) {
-	u, err := url.Parse(urlString)
-	if err != nil {
-		return nil, fmt.Errorf("Error parsing URL: %v", err)
-	}
+func UpdateConfig(configFile []byte, results []speedtestresult) error {
+	// 创建字符串切片用于存储 IP 地址
+	var ips []string
 
-	if u.Scheme != "ss" {
-		return nil, fmt.Errorf("Invalid scheme: %s", u.Scheme)
-	}
-
-	plugin, pluginOpts := getPluginInfo(u)
-
-	method, password, err := decodeUserinfo(u.User.Username())
-	if err != nil {
-		return nil, fmt.Errorf("Error decoding userinfo: %v", err)
-	}
-
-	config := &ShadowsocksConfig{
-		Host:       u.Hostname(),
-		Port:       atoi(u.Port()),
-		Method:     method,
-		Password:   password,
-		Plugin:     plugin,
-		PluginOpts: pluginOpts,
-	}
-
-	return config, nil
-}
-
-func decodeUserinfo(userinfo string) (string, string, error) {
-	decodedUserInfo, err := base64.RawURLEncoding.DecodeString(userinfo)
-	if err != nil {
-		return "", "", fmt.Errorf("Base64 decoding failed, fallback to percent decoding: %v", err)
-	}
-
-	userInfoParts := strings.SplitN(string(decodedUserInfo), ":", 2)
-	if len(userInfoParts) != 2 {
-		return "", "", fmt.Errorf("Invalid userinfo format")
-	}
-
-	return userInfoParts[0], userInfoParts[1], nil
-}
-
-func getPluginInfo(u *url.URL) (string, string) {
-	pluginInfo := u.Query().Get("plugin")
-	if strings.Contains(pluginInfo, ";") {
-		parts := strings.SplitN(pluginInfo, ";", 2)
-		return parts[0], parts[1]
-	}
-	return pluginInfo, ""
-}
-
-func atoi(s string) int {
-	i, _ := strconv.Atoi(s)
-	return i
-}
-
-func generateJSON(ssConfig *ShadowsocksConfig, results []speedtestresult) error {
-	// 创建服务器切片
-	var servers []Server
-
+	// 从结果中获取 IP 地址并存储在 ips 中
 	for _, res := range results {
-		server := Server{
-			Disabled:   false,
-			Mode:       "tcp_only",
-			Address:    res.result.ip,
-			Port:       ssConfig.Port,
-			Method:     ssConfig.Method,
-			Password:   ssConfig.Password,
-			Plugin:     ssConfig.Plugin,
-			PluginOpts: ssConfig.PluginOpts,
+		ips = append(ips, res.result.ip)
+	}
+
+	// 移除注释
+	configString := removeComments(string(configFile))
+
+	// 解析 JSON
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(configString), &config); err != nil {
+		return fmt.Errorf("JSON 解析失败: %v", err)
+	}
+
+	// 保存符合条件的服务器配置
+	var savedServers []ServerConfig
+
+	// 遍历服务器配置
+	for _, server := range config["servers"].([]interface{}) {
+		serverMap, ok := server.(map[string]interface{})
+		if !ok {
+			continue
 		}
 
-		servers = append(servers, server)
+		// 检查必要字段是否存在
+		disabled, _ := serverMap["disabled"].(bool)
+		mode, _ := serverMap["mode"].(string)
+		port, _ := serverMap["port"].(float64)
+		method, _ := serverMap["method"].(string)
+		password, _ := serverMap["password"].(string)
+		plugin, _ := serverMap["plugin"].(string)
+		pluginOpts, _ := serverMap["plugin_opts"].(string)
+
+		if strings.ToLower(plugin) == "v2ray-plugin" && !strings.Contains(strings.ToLower(pluginOpts), "quic") {
+			var serverConfig ServerConfig
+			serverConfig.Disabled = disabled
+			serverConfig.Mode = mode
+			// 获取ips数组中的IP地址
+			serverConfig.Address = ips[len(savedServers)%len(ips)]
+			serverConfig.Port = int(port)
+			serverConfig.Method = method
+			serverConfig.Password = password
+			serverConfig.Plugin = plugin
+			serverConfig.PluginOpts = pluginOpts
+			savedServers = append(savedServers, serverConfig)
+		}
 	}
 
-	// 创建包含服务器切片的结构
-	serverList := ServerList{
-		Servers: servers,
-	}
+	// 清空原始的服务器配置
+	config["servers"] = nil
 
-	// 转换为JSON格式
-	jsonData, err := json.MarshalIndent(serverList, "", "    ")
+	// 将新的服务器配置写入
+	config["servers"] = savedServers
+
+	// 转换为 JSON 字符串
+	newConfig, err := json.MarshalIndent(config, "", "    ")
 	if err != nil {
-		handleError(err, "无法生成JSON")
+		return fmt.Errorf("无法转换为 JSON 字符串: %v", err)
 	}
 
-	// 获取文件名
-	fileName := filepath.Base(*outFile)
-
-	// 获取文件后缀
-	fileExt := filepath.Ext(*outFile)
-
-	// 将后缀替换为.json
-	jsonFile := fileName[:len(fileName)-len(fileExt)] + ".json"
-
-	// 将JSON写入文件
-	file, err := os.Create(jsonFile)
-	if err != nil {
-		handleError(err, "无法创建文件")
-	}
-	defer file.Close()
-
-	_, err = file.Write(jsonData)
-	if err != nil {
-		handleError(err, "无法写入JSON文件")
+	// 保存到文件
+	if err := ioutil.WriteFile(*ssJSONFile, newConfig, 0644); err != nil {
+		return fmt.Errorf("无法写入配置文件: %v", err)
 	}
 
-	fmt.Println("JSON文件已成功生成：", jsonFile)
 	return nil
+}
+
+// removeComments 移除JSON字符串中的注释
+func removeComments(jsonString string) string {
+	lines := strings.Split(jsonString, "\n")
+	var cleanedLines []string
+
+	for _, line := range lines {
+		// 移除行内注释
+		line = strings.Split(line, "//")[0]
+		// 移除行尾注释
+		line = strings.Split(line, "#")[0]
+
+		cleanedLines = append(cleanedLines, line)
+	}
+
+	return strings.Join(cleanedLines, "\n")
 }
