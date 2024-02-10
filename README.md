@@ -14,25 +14,27 @@ go build -o ipspeedtest main.go
 # 参数说明
 ipspeedtest 可以接受以下参数：
 
+root@FriendlyWrt:/overlay/r4s# ./ipspeedtest -h
 Usage of ./ipspeedtest:
-  - -file string
+-  -file string
         IP地址文件名称 (default "ip.txt")
-  - -max int
+-  -max int
         并发请求最大协程数 (default 100)
-  - -outfile string
+-  -outfile string
         输出文件名称 (default "ip.csv")
-  - -port int
+-  -port int
         端口 (default 443)
-  - -scanallips
+-  -scanallips
         是否自动获取优选IP
-  - -speedtest int
+-  -speedtest int
         下载测速协程数量,设为0禁用测速 (default 5)
-  - -ssurl string
-        ShadowSocks URLs (SIP002)使用了v2ray-plugin的链接将会输出json文件 (default "ss://")
-  - -tls
+-  -ssjson string
+        ShadowSocks配置文件 (default "sslocal.json")
+-  -tls
         是否启用TLS (default true)
-  - -url string
+-  -url string
         测速文件地址 (default "speed.cloudflare.com/__down?bytes=500000000")
+
 
 
 # 运行
