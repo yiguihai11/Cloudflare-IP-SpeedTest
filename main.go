@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -120,8 +121,7 @@ func main() {
 		increaseMaxOpenFiles()
 	}
 	// 进行测速
-	err := speedtest()
-	if err != nil {
+	if err := speedtest(); err != nil {
 		handleError(err, "Error during speedtest")
 	} else {
 		fmt.Println("Speedtest completed successfully.")
@@ -808,7 +808,7 @@ func UpdateConfig(configFile []byte, results []speedtestresult) error {
 	}
 
 	// 保存符合条件的服务器配置
-	var savedServers []ServerConfig
+	var savedServers []interface{}
 
 	// 遍历服务器配置
 	for _, server := range config["servers"].([]interface{}) {
@@ -820,31 +820,35 @@ func UpdateConfig(configFile []byte, results []speedtestresult) error {
 		// 检查必要字段是否存在
 		disabled, _ := serverMap["disabled"].(bool)
 		mode, _ := serverMap["mode"].(string)
+		address, _ := serverMap["address"].(string) // 注意：这里修改了获取 IP 地址的方式
 		port, _ := serverMap["port"].(float64)
 		method, _ := serverMap["method"].(string)
 		password, _ := serverMap["password"].(string)
-		plugin, _ := serverMap["plugin"].(string)
-		pluginOpts, _ := serverMap["plugin_opts"].(string)
+		plugin, pluginExists := serverMap["plugin"].(string)
+		pluginOpts, optsExists := serverMap["plugin_opts"].(string)
 
+		// 记录获取的字段值
+		log.Printf("disabled: %v, mode: %s, address: %s, port: %v, method: %s, password: %s, plugin: %s, pluginOpts: %s\n", disabled, mode, address, port, method, password, plugin, pluginOpts)
+
+		// 只修改满足条件的服务器配置
 		if strings.ToLower(plugin) == "v2ray-plugin" && !strings.Contains(strings.ToLower(pluginOpts), "quic") {
-			var serverConfig ServerConfig
-			serverConfig.Disabled = disabled
-			serverConfig.Mode = mode
 			// 获取ips数组中的IP地址
-			serverConfig.Address = ips[len(savedServers)%len(ips)]
-			serverConfig.Port = int(port)
-			serverConfig.Method = method
-			serverConfig.Password = password
-			serverConfig.Plugin = plugin
-			serverConfig.PluginOpts = pluginOpts
-			savedServers = append(savedServers, serverConfig)
+			serverMap["address"] = ips[len(savedServers)%len(ips)]
+			// 移除 plugin 和 plugin_opts 项如果它们不存在于原始配置中
+			if !pluginExists {
+				delete(serverMap, "plugin")
+			}
+			if !optsExists {
+				delete(serverMap, "plugin_opts")
+			}
+			savedServers = append(savedServers, serverMap)
+		} else {
+			// 不满足条件的服务器配置，直接添加到保存的服务器列表中，保持不变
+			savedServers = append(savedServers, serverMap)
 		}
 	}
 
-	// 清空原始的服务器配置
-	config["servers"] = nil
-
-	// 将新的服务器配置写入
+	// 更新服务器配置
 	config["servers"] = savedServers
 
 	// 转换为 JSON 字符串
@@ -854,7 +858,7 @@ func UpdateConfig(configFile []byte, results []speedtestresult) error {
 	}
 
 	// 保存到文件
-	if err := ioutil.WriteFile(*ssJSONFile, newConfig, 0644); err != nil {
+	if err := ioutil.WriteFile(*SSJson, newConfig, 0644); err != nil {
 		return fmt.Errorf("无法写入配置文件: %v", err)
 	}
 
