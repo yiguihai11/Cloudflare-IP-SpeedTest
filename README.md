@@ -41,7 +41,7 @@ Usage of ./ipspeedtest:
 在终端中运行以下命令来启动程序：
 
 ```
-./ipspeedtest -file=ip.txt -outfile=ip.csv -port=443 -max=100 -speedtest=1 -tls=true -url=speed.cloudflare.com/__down?bytes=500000000
+./ipspeedtest -scanallips=true -file=ip.txt -outfile=ip.csv -port=443 -max=100 -speedtest=1 -tls=true -url=speed.cloudflare.com/__down?bytes=500000000
 ```
 请替换参数值以符合您的实际需求。
 
