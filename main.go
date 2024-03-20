@@ -461,8 +461,6 @@ func speedtest() error {
 		if err := UpdateConfig(configFile, results); err != nil {
 			handleError(err, "更新配置文件时发生错误件")
 		}
-
-		fmt.Println("新的配置已写入", *SSJson, "文件")
 	}
 	fmt.Printf("成功将结果写入文件 %s，耗时 %d秒\n", *outFile, time.Since(startTime)/time.Second)
 	return nil
@@ -797,71 +795,73 @@ func UpdateConfig(configFile []byte, results []speedtestresult) error {
 	for _, res := range results {
 		ips = append(ips, res.result.ip)
 	}
+	if len(ips) > 0 {
+		// 移除注释
+		configString := removeComments(string(configFile))
 
-	// 移除注释
-	configString := removeComments(string(configFile))
-
-	// 解析 JSON
-	var config map[string]interface{}
-	if err := json.Unmarshal([]byte(configString), &config); err != nil {
-		return fmt.Errorf("JSON 解析失败: %v", err)
-	}
-
-	// 保存符合条件的服务器配置
-	var savedServers []interface{}
-
-	// 遍历服务器配置
-	for _, server := range config["servers"].([]interface{}) {
-		serverMap, ok := server.(map[string]interface{})
-		if !ok {
-			continue
+		// 解析 JSON
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(configString), &config); err != nil {
+			return fmt.Errorf("JSON 解析失败: %v", err)
 		}
 
-		// 检查必要字段是否存在
-		disabled, _ := serverMap["disabled"].(bool)
-		mode, _ := serverMap["mode"].(string)
-		address, _ := serverMap["address"].(string) // 注意：这里修改了获取 IP 地址的方式
-		port, _ := serverMap["port"].(float64)
-		method, _ := serverMap["method"].(string)
-		password, _ := serverMap["password"].(string)
-		plugin, pluginExists := serverMap["plugin"].(string)
-		pluginOpts, optsExists := serverMap["plugin_opts"].(string)
+		// 保存符合条件的服务器配置
+		var savedServers []interface{}
 
-		// 记录获取的字段值
-		log.Printf("disabled: %v, mode: %s, address: %s, port: %v, method: %s, password: %s, plugin: %s, pluginOpts: %s\n", disabled, mode, address, port, method, password, plugin, pluginOpts)
+		// 遍历服务器配置
+		for _, server := range config["servers"].([]interface{}) {
+			serverMap, ok := server.(map[string]interface{})
+			if !ok {
+				continue
+			}
 
-		// 只修改满足条件的服务器配置
-		if strings.ToLower(plugin) == "v2ray-plugin" && !strings.Contains(strings.ToLower(pluginOpts), "quic") {
-			// 获取ips数组中的IP地址
-			serverMap["address"] = ips[len(savedServers)%len(ips)]
-			// 移除 plugin 和 plugin_opts 项如果它们不存在于原始配置中
-			if !pluginExists {
-				delete(serverMap, "plugin")
+			// 检查必要字段是否存在
+			disabled, _ := serverMap["disabled"].(bool)
+			mode, _ := serverMap["mode"].(string)
+			address, _ := serverMap["address"].(string) // 注意：这里修改了获取 IP 地址的方式
+			port, _ := serverMap["port"].(float64)
+			method, _ := serverMap["method"].(string)
+			password, _ := serverMap["password"].(string)
+			plugin, pluginExists := serverMap["plugin"].(string)
+			pluginOpts, optsExists := serverMap["plugin_opts"].(string)
+
+			// 记录获取的字段值
+			log.Printf("disabled: %v, mode: %s, address: %s, port: %v, method: %s, password: %s, plugin: %s, pluginOpts: %s\n", disabled, mode, address, port, method, password, plugin, pluginOpts)
+
+			// 只修改满足条件的服务器配置
+			if strings.ToLower(plugin) == "v2ray-plugin" && !strings.Contains(strings.ToLower(pluginOpts), "quic") {
+				// 获取ips数组中的IP地址
+				serverMap["address"] = ips[len(savedServers)%len(ips)]
+				// 移除 plugin 和 plugin_opts 项如果它们不存在于原始配置中
+				if !pluginExists {
+					delete(serverMap, "plugin")
+				}
+				if !optsExists {
+					delete(serverMap, "plugin_opts")
+				}
+				savedServers = append(savedServers, serverMap)
+			} else {
+				// 不满足条件的服务器配置，直接添加到保存的服务器列表中，保持不变
+				savedServers = append(savedServers, serverMap)
 			}
-			if !optsExists {
-				delete(serverMap, "plugin_opts")
-			}
-			savedServers = append(savedServers, serverMap)
+		}
+
+		// 更新服务器配置
+		config["servers"] = savedServers
+
+		// 转换为 JSON 字符串
+		newConfig, err := json.MarshalIndent(config, "", "    ")
+		if err != nil {
+			return fmt.Errorf("无法转换为 JSON 字符串: %v", err)
+		}
+
+		// 保存到文件
+		if err := ioutil.WriteFile(*SSJson, newConfig, 0644); err != nil {
+			return fmt.Errorf("无法写入配置文件: %v", err)
 		} else {
-			// 不满足条件的服务器配置，直接添加到保存的服务器列表中，保持不变
-			savedServers = append(savedServers, serverMap)
+			log.Printf("新的配置已写入", *SSJson, "文件")
 		}
 	}
-
-	// 更新服务器配置
-	config["servers"] = savedServers
-
-	// 转换为 JSON 字符串
-	newConfig, err := json.MarshalIndent(config, "", "    ")
-	if err != nil {
-		return fmt.Errorf("无法转换为 JSON 字符串: %v", err)
-	}
-
-	// 保存到文件
-	if err := ioutil.WriteFile(*SSJson, newConfig, 0644); err != nil {
-		return fmt.Errorf("无法写入配置文件: %v", err)
-	}
-
 	return nil
 }
 
