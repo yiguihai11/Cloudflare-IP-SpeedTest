@@ -859,7 +859,7 @@ func UpdateConfig(configFile []byte, results []speedtestresult) error {
 		if err := ioutil.WriteFile(*SSJson, newConfig, 0644); err != nil {
 			return fmt.Errorf("无法写入配置文件: %v", err)
 		} else {
-			log.Printf("新的配置已写入", *SSJson, "文件")
+			log.Printf("新的配置已写入 %s 文件", *SSJson)
 		}
 	}
 	return nil
